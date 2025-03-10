@@ -7,20 +7,10 @@ namespace Test;
 
 public class FileIOTest
 {
-    private  ILoggerFactory _loggerFactory;
     [SetUp]
     public void Setup()
     {
-        _loggerFactory = LoggerFactory.Create(b =>
-        {
-            b.Services.AddLogging();
-        });
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _loggerFactory.Dispose();
+       
     }
 
     [Test]
@@ -29,7 +19,7 @@ public class FileIOTest
         string filePath = Path.GetTempFileName();
         try
         {
-            IIOManager io = new FileIO(filePath,_loggerFactory.CreateLogger<FileIO>());
+            IIOManager io = new FileIO(filePath);
             var buf = Encoding.UTF8.GetBytes("some");
             var writeCount = io.Write(buf);
             Assert.IsTrue(writeCount == (ulong)buf.Length );
@@ -48,7 +38,7 @@ public class FileIOTest
         IIOManager? io = null;
         try
         {
-            io = new FileIO(filePath,_loggerFactory.CreateLogger<FileIO>());
+            io = new FileIO(filePath);
             var buf = Encoding.UTF8.GetBytes("some");
             io.Write(buf);
             byte[] readBuf = new byte[buf.Length];

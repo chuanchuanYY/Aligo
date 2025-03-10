@@ -7,26 +7,18 @@ namespace Test;
 public class DictionaryIndexerTest
 {
    
-    private ILoggerFactory _loggerFactory;
+  
     [SetUp]
     public void Setup()
     {
-        _loggerFactory = LoggerFactory.Create(b =>
-        {
-            b.Services.AddLogging();
-        });
+     
     }
-    [TearDown]
-    public void TearDown()
-    {
-        _loggerFactory.Dispose();
-    }
+
 
     [Test]
     public void TestPutKeyReturnTrue()
     {
-        ILogger<DictionaryIndexer> logger = _loggerFactory.CreateLogger<DictionaryIndexer>();
-        IIndexer indexer = new DictionaryIndexer(logger);
+        IIndexer indexer = new DictionaryIndexer();
 
         var put1Result = indexer.Put(Encoding.UTF8.GetBytes("key-1"), new LogRecordPos(1, 0));
         Assert.IsTrue(put1Result);
@@ -35,8 +27,7 @@ public class DictionaryIndexerTest
     [Test] 
     public void TestPutExistKeyReturnTrueAndUpdateValue()
     {
-        ILogger<DictionaryIndexer> logger = _loggerFactory.CreateLogger<DictionaryIndexer>();
-        IIndexer indexer = new DictionaryIndexer(logger);
+        IIndexer indexer = new DictionaryIndexer();
 
         var put1Result = indexer.Put(Encoding.UTF8.GetBytes("key-1"), new LogRecordPos(1, 0));
         Assert.IsTrue(put1Result);
@@ -54,8 +45,7 @@ public class DictionaryIndexerTest
     [Test]
     public void TestGetReturnLogRecordPos()
     {
-        ILogger<DictionaryIndexer> logger = _loggerFactory.CreateLogger<DictionaryIndexer>();
-        IIndexer indexer = new DictionaryIndexer(logger);
+        IIndexer indexer = new DictionaryIndexer();
         
         var put1Result = indexer.Put(Encoding.UTF8.GetBytes("key-1"), new LogRecordPos(1, 0));
         Assert.IsTrue(put1Result);
@@ -71,8 +61,7 @@ public class DictionaryIndexerTest
     [Test]
     public void TestDeleteKeyReturnTrue()
     {
-        ILogger<DictionaryIndexer> logger = _loggerFactory.CreateLogger<DictionaryIndexer>();
-        IIndexer indexer = new DictionaryIndexer(logger);
+        IIndexer indexer = new DictionaryIndexer();
         
         var put1Res = indexer.Put(Encoding.UTF8.GetBytes("key-1"), new LogRecordPos(1, 0));
         var put2Res = indexer.Put(Encoding.UTF8.GetBytes("key-1"), new LogRecordPos(1, 0));
