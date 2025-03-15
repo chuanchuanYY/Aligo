@@ -1,7 +1,8 @@
 ﻿namespace Core.DB;
 
-public enum LogRecordType
+internal enum LogRecordType
 {
     Normal = 1,
     Deleted ,
+    TransactionFinished, // 事务
 }

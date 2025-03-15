@@ -4,7 +4,7 @@ using CommunityToolkit.Diagnostics;
 
 namespace Core.DB;
 
-public class LogRecord
+internal class LogRecord
 {
     public byte[] Key { get; set; }
     public byte[] Value { get; set; }

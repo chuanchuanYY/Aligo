@@ -2,6 +2,7 @@
 using System.Text;
 using Core.DB;
 using Core.IO;
+using Test.Common;
 
 namespace Test;
 
@@ -19,8 +20,8 @@ public class DataFileTest
          Assert.IsTrue(writeResult);
          io.Dispose();
          File.Delete(path);
-      
      }
+
     [Test]
     public void TestRead()
     {
@@ -44,6 +45,47 @@ public class DataFileTest
             
       io.Dispose();
       File.Delete(path);
+     
+    }
+    
+    
+    [Test]
+    public void TestReadMoreThanOne()
+    {
+        var path = Path.GetTempFileName();
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+        IIOManager io = new FileIO(path);
+        var datafile = new DataFile(2, io);
+       
+        for (int i = 0; i < 10; i++)
+        {
+            var record = new LogRecord()
+            {
+                Key = KeyValueHelper.GetKey(i),
+                Value = KeyValueHelper.GetValue(i),
+                RecordType = LogRecordType.Normal,
+            };
+            var writeResult = datafile.Write(record.Encode());
+            Assert.IsTrue(writeResult);
+        }
+
+        ulong offset = 0;
+        for (int i = 0; i < 10; i++)
+        {
+            var readResult = datafile.ReadLogRecord(offset);
+            Assert.NotNull(readResult);
+            Assert.That(() => StructuralComparisons.StructuralEqualityComparer.Equals(KeyValueHelper.GetKey(i), readResult.Key)
+                              && StructuralComparisons.StructuralEqualityComparer.Equals(KeyValueHelper.GetValue(i), readResult.Value)
+                              && LogRecordType.Normal == readResult.RecordType);
+            offset += (ulong)(LogRecord.MaxHeaderSize() + readResult.Key.Length + readResult.Value.Length + 4);
+        }
+     
+            
+        io.Dispose();
+        File.Delete(path);
      
     }
 }

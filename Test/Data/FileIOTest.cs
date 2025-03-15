@@ -30,10 +30,34 @@ public class FileIOTest
             File.Delete(filePath);
         }
     }
-
+    [Test]
+    public void TestWrite()
+    {
+        string filePath = Path.GetTempFileName();
+        var start = DateTime.Now;
+        try
+        {
+            IIOManager io = new FileIO(filePath);
+            int count = 10_000; //
+            for (int i = 0; i < count; i++)
+            {
+                var buf = "some"u8.ToArray();
+                var writeCount = io.Write(buf);
+                Assert.IsTrue(writeCount == (ulong)buf.Length );
+            }
+            
+            Console.WriteLine(DateTime.Now - start);
+            (io as FileIO)!.Dispose();
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
     [Test]
     public void TestRead()
     {
+        // 如果每次写入都Sync刷盘，速度会相当慢。
         string filePath = Path.GetTempFileName();
         IIOManager? io = null;
         try
@@ -55,4 +79,6 @@ public class FileIOTest
             File.Delete(filePath);
         }
     }
+    
+    
 }

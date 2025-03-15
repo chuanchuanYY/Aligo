@@ -35,7 +35,6 @@ internal class DictionaryIndexer: IIndexer
         }
         catch (Exception e)
         {
-           // log ...
            _logger.LogError(e,$"failed to add or update key {key}");
            return false;
         }
@@ -64,6 +63,27 @@ internal class DictionaryIndexer: IIndexer
     {
         Guard.IsNotNull(key);
         return _dictionary.Remove(key, out var value);
+    }
+
+    public IEnumerable<byte[]> GetKeys()
+    {
+        return _dictionary.Keys;
+    }
+
+    public bool Contains(byte[] key)
+    {
+        return _dictionary.ContainsKey(key);
+    }
+
+
+    public IEnumerator<KeyValuePair<byte[], LogRecordPos>> GetEnumerator()
+    {
+        return _dictionary.GetEnumerator();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return this.GetEnumerator();
     }
 }
 

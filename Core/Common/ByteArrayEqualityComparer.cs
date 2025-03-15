@@ -7,7 +7,6 @@ internal class ByteArrayEqualityComparer : IEqualityComparer<byte[]>
 {
     public bool Equals(byte[]? x, byte[]? y)
     {
-        
         return StructuralComparisons.StructuralEqualityComparer.Equals(x, y);
     }
 

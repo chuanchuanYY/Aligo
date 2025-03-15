@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Core.DB;
 
-public class DataFile
+internal class DataFile: IDisposable
 {
     public UInt32 FileID { get; private set; }
     public UInt64 WriteOffset { get;set; } = 0;
@@ -29,6 +29,8 @@ public class DataFile
        {
            return false;
        }
+
+       WriteOffset += writeCount;
        return true;
     }
 
@@ -39,27 +41,25 @@ public class DataFile
 
     public LogRecord? ReadLogRecord(UInt64 offset)
     {
+        // +----------header------------+
+        // | type | keySize | valueSize | Key | Value | crc |
         byte[] headerBuf = new byte[LogRecord.MaxHeaderSize()];
 
         if (_ioManager.Read(headerBuf, offset) != (ulong)headerBuf.Length)
         {
-            _logger.LogError($"Read log record {offset} failed.");
-            ThrowHelper.ThrowInvalidOperationException("Failed to read log header ");
+            return null;
         }
         
         // 获取KeySize 和 valueSize
         var headerSpan = headerBuf.AsSpan();
-        
-        UInt32 keySize = UInt32.Parse(headerSpan.Slice(1,4));
-        UInt32 valueSize = UInt32.Parse(headerSpan.Slice(5,4));
+      
+        UInt32 keySize =   BitConverter.ToUInt32(headerSpan.Slice(1, 4));
+        UInt32 valueSize = BitConverter.ToUInt32(headerSpan.Slice(5,4));
         // 获取完整记录
-        var keyValueBuf = ArrayPool<byte>.Shared.Rent((int)(keySize + valueSize + 4));
-        
+        var keyValueBuf =new byte[(int)(keySize + valueSize + 4)];
         if (_ioManager.Read(keyValueBuf, offset + (ulong)headerSpan.Length) != (ulong)keyValueBuf.Length)
         {
-            ArrayPool<byte>.Shared.Return(keyValueBuf);
-            _logger.LogError($"Read log record {offset} failed.");
-            ThrowHelper.ThrowInvalidOperationException("Failed to read log header ");
+            return null;
         }
 
         var recordBuf = new byte[headerBuf.Length + keyValueBuf.Length];
@@ -67,7 +67,12 @@ public class DataFile
         keyValueBuf.CopyTo(recordBuf,headerBuf.Length);
         
         LogRecord record = LogRecord.Decode(recordBuf);
-        ArrayPool<byte>.Shared.Return(keyValueBuf);
+        
         return record;
+    }
+
+    public void Dispose()
+    {
+        _ioManager.Dispose();
     }
 }

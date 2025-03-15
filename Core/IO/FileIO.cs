@@ -4,41 +4,48 @@ using Microsoft.Extensions.Logging;
 
 namespace Core.IO;
 
-public class FileIO: IIOManager
+internal class FileIO: IIOManager
 {
     private readonly FileStream _readStream;
     private readonly FileStream _writeStream;
     private readonly ILogger<FileIO> _logger;
-    public bool AlwayFlush { get; set; } = true;
+    public bool AlwayFlush { get; set; } = false;
     
     /// <summary>
     /// 
     /// </summary>
     /// <param name="filePath"></param>
-    /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="ArgumentNullException"></exception>
     public FileIO(string filePath)
     {
         Guard.IsNotNullOrEmpty(filePath);
         _logger = Log.Factory.CreateLogger<FileIO>();
         // Append access can be requested only in write-only mode. (Parameter 'access')
-        _readStream = new FileStream(filePath,
-                        FileMode.OpenOrCreate,
-                        FileAccess.Read, FileShare.ReadWrite);
-        _writeStream = new FileStream(filePath,
-                        FileMode.Append,
-                        FileAccess.Write);
 
+        try
+        {
+            _readStream = new FileStream(filePath,
+                FileMode.OpenOrCreate,
+                FileAccess.Read, FileShare.ReadWrite);
+            _writeStream = new FileStream(filePath,
+                FileMode.Append,
+                FileAccess.Write,FileShare.ReadWrite);
+
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e,"Failed to Open File");
+            throw;
+        }
+  
     }
     
     
     /// <summary>
     /// 
     /// </summary>
-    /// <param name="buf"></param>
-    /// <param name="offset"></param>
+    /// <param name="buf">将数据读取到字节缓冲区，读取的大小维缓冲区的长度</param>
+    /// <param name="offset">读取偏移量，将从文件的offset偏移量开始读取数据</param>
     /// <returns></returns>
-    /// <exception cref="Exception">Read File Exception</exception>
     public ulong Read(byte[] buf, ulong offset)
     {
         Guard.IsNotNull(buf);
@@ -57,9 +64,8 @@ public class FileIO: IIOManager
     /// <summary>
     /// 
     /// </summary>
-    /// <param name="buf"></param>
+    /// <param name="buf">将字节数组全部追加写入到文件</param>
     /// <returns></returns>
-    /// <exception cref="Exception">Write File Exception</exception>
     public ulong Write(byte[] buf)
     {
         Guard.IsNotNull(buf);
@@ -94,6 +100,9 @@ public class FileIO: IIOManager
 
     public void Dispose()
     {
+        _writeStream.Close();
+        _readStream.Close();
+        
         _readStream.Dispose();
         _writeStream.Dispose();
     }
