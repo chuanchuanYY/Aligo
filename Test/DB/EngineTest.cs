@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Text;
 using Core.DB;
+using NUnit.Framework.Internal.Execution;
 using Test.Common;
 
 namespace Test;
@@ -22,6 +23,43 @@ public class EngineTest
         Directory.Delete(dirPath,true);
     }
 
+    [Test]
+    public void TestStat()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir");
+        var engineOps = new EngineOptions(dirPath);
+        var engine = new Engine(engineOps);
+        var keyValues = Enumerable.Range(0, 100)
+            .Select(n => (KeyValueHelper.GetKey(n), KeyValueHelper.GetValue(n)))
+            .ToList();
+        
+        keyValues.ForEach(item =>
+        {
+            var putKeyRes = engine.Put(item.Item1,item.Item2);
+            Assert.True(putKeyRes);
+        });
+        var keyValues2 = Enumerable.Range(0, 50)
+            .Select(n => (KeyValueHelper.GetKey(n), KeyValueHelper.GetValue(n)))
+            .ToList();
+        
+        keyValues2.ForEach(item =>
+        {
+            var putKeyRes = engine.Put(item.Item1,item.Item2);
+            Assert.True(putKeyRes);
+        });
+        engine.Sync();
+        var stat = engine.GetStat();
+        
+        Assert.AreEqual(100,stat.KeyNum);
+        Assert.AreEqual(1,stat.DataFileNum);
+        Assert.AreEqual(2230,stat.ReclaimableSize);
+        Assert.AreEqual(6710,stat.DiskSize);
+        
+        engine.Dispose();
+        Directory.Delete(dirPath,true); 
+    }
+    
     [Test]
     public void TestPutSameKey()
     {
@@ -111,6 +149,28 @@ public class EngineTest
         }
         Assert.True(engine.GetKeys().Count( ) == putCount);
         engine.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+
+
+    [Test]
+    public void TestBackUp()
+    {
+        // 测试写入超过数据文件最大容量，以让它创建新的数据文件
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir");
+        var engineOps = new EngineOptions(dirPath,1024*10);
+        var engine = new Engine(engineOps);
+        int putCount = 10_000;  
+        for (int i = 0; i < putCount; i++)
+        {
+            var putKey1Res = engine.Put(KeyValueHelper.GetKey(i),KeyValueHelper.GetValue(i));
+            Assert.True(putKey1Res);
+        }
+        
+        engine.BackUp(Path.Join(dirPath,"BackupDir"));
+        engine.Dispose();
+        Directory.Delete(Path.Join(dirPath,"BackupDir"),true);
         Directory.Delete(dirPath,true);
     }
 }

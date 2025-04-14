@@ -1,4 +1,6 @@
-﻿namespace Core.DB;
+﻿using Core.IO;
+
+namespace Core.DB;
 
 public class EngineOptions
 {
@@ -7,12 +9,21 @@ public class EngineOptions
     public bool AlwaySync { get; set; }
 
     public const UInt64 DeafultDataFileSize = 1024 * 1024 * 100; // 100Mb
-     public EngineOptions(string dirPath,UInt64 dataFileSize = DeafultDataFileSize, bool alwaySync = false)
+    
+    public IOManagerType IOType { get; set; }
+    
+    public float ReclaimableRatio { get; set; } // 可回收空间在数据目录的占比，只有在占比大于等于该值的时候才允许Merge
+
+    public EngineOptions(string dirPath, UInt64 dataFileSize = DeafultDataFileSize, bool alwaySync = false,
+        IOManagerType ioType = IOManagerType.FileIO, float reclaimableRatio = 0.5f)
+
     {
         DirPath = dirPath;
         DataFileSize = dataFileSize;
         AlwaySync = alwaySync;
+        this.IOType = ioType;
+        this.ReclaimableRatio = reclaimableRatio;
     }
 
-    
+
 }

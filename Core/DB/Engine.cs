@@ -1,4 +1,6 @@
 ﻿using System.Collections;
+using System.ComponentModel;
+using System.Text;
 using CommunityToolkit.Diagnostics;
 using Core.Common;
 using Core.Data;
@@ -10,11 +12,14 @@ namespace Core.DB;
 public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
 {
     private const string DataFileExtension = ".data";
+    private const string MergeDirName = "_Merge";
+    private const string HintFileName = "_Hint";
+    private const string MergeFinishedFileName = "_MergeFinished";
     private readonly EngineOptions _options;
     private DataFile _activeFile;
     private readonly Dictionary<UInt32, DataFile> _olderFiles = new();
     internal readonly  IIndexer Index;
-
+    
     // 事务序列号默认从 1开始
     private UInt32 _transactionNumber = 1;
     // 表示非事务
@@ -23,6 +28,13 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
     
     internal  readonly  Mutex CommitLock = new Mutex();
     private readonly ILogger<Engine> _logger;
+    
+    
+    // 用于记录统计数据
+    private UInt64 _reclaimableSize; // 磁盘可回收的空间，单位字节
+
+    
+    
     public Engine(EngineOptions options)
     {
         _options = options;
@@ -30,6 +42,7 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         _logger = Log.Factory.CreateLogger<Engine>();
         Init();
     }
+    #region Init 
     private void Init()
     {
         // 判断数据库目录是否已经存在
@@ -46,12 +59,14 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
             }
         }
         
+        // 加载Merge数据文件
+        LoadMergeDataFiles();
         // 加载数据文件
         List<DataFile> datafiles = LoadDataFiles();
         if (datafiles.Count == 0)
         {
             string fileName = Path.Join(_options.DirPath, "0" + DataFileExtension);
-            _activeFile = new DataFile(0,new FileIO(fileName));
+            _activeFile = new DataFile(0,IOManagerFactory.Create(_options.IOType,fileName));
             return;
         }
 
@@ -65,17 +80,137 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         }
         _activeFile = datafiles.Last();
         
+        // 加载hint索引文件
+        if (File.Exists(Path.Join(_options.DirPath + MergeDirName, HintFileName)))
+        {
+            //var io = new FileIO(Path.Join(_options.DirPath + MergeDirName, HintFileName));
+            var io = IOManagerFactory.Create(_options.IOType,Path.Join(_options.DirPath + MergeDirName, HintFileName));
+            var hintFile = new DataFile(0,io);
+            UInt64 offset = 0;
+            while (true)
+            {
+                // hint索引文件存储的记录value为LogrecordPos
+                var record = hintFile.ReadLogRecord(offset);
+                if (record == null)
+                    break;
+                var (_,key) = ParseTransactionNumberAndKey(record.Key);
+                
+                // 解码LogrecordPos
+                var pos = LogRecordPos.Decode(record.Value);
+                Index.Put(key,pos);
+            }
+            
+        }
+      
         // 加载内存索引
         LoadIndexer(datafiles);
+        
+        // todo ...
+        // 将Merge文件加载回来后，要删除merge目录的，不然重启又要去复制一遍文件等等
+        
+        
+        // 如果IOManagerType 是 MemoryMap 类型，在初始化完成后将它修改为FileIO
+        // MemoryMap只用于加速初始化
+        _options.IOType = IOManagerType.FileIO;
     }
-    
+
+    private void LoadMergeDataFiles()
+    {
+        // 判断Merge目录是否存在
+        if (!Directory.Exists(_options.DirPath + MergeDirName))
+        {
+            return;
+        }
+        
+        // 加载文件
+        var files = Directory.GetFiles(_options.DirPath + MergeDirName);
+        
+        // 判断是否有Merge完成标识文件
+        bool hasMerge = false;
+        string finishedFilePath = string.Empty;
+        foreach (var f in files)
+        {
+            if (Path.GetFileName(f) == MergeFinishedFileName)
+            {
+                hasMerge = true;
+                finishedFilePath = f;
+            }
+        }
+
+        if (!hasMerge)
+        {
+            return;
+        }
+        
+        // 获取最近未参与Merge的文件ID
+        //var io = new FileIO(finishedFilePath);
+        var io = IOManagerFactory.Create(_options.IOType, finishedFilePath);
+        var finishedDataFile = new DataFile(0,io);
+        var finishedRecord = finishedDataFile.ReadLogRecord(0);
+        
+        var recentFileId = BitConverter.ToUInt32(finishedRecord!.Value);
+        // 先删除已经Merge的文件
+        // 删除文件id小于最近参与merger文件id的文件
+        var willDeleteFiles = Directory.GetFiles(_options.DirPath)
+            .Where(f =>
+            {
+                if (!UInt32.TryParse(Path.GetFileNameWithoutExtension(f), out var fileId))
+                {
+                    return false;
+                }
+
+                if (fileId < recentFileId)
+                {
+                    return true;
+                }
+                return false;
+            });
+        foreach (var f in willDeleteFiles)
+        {
+            File.Delete(f);
+        }
+        
+        // 将merge 后的文件复制回引擎目录
+        foreach (var f in files)
+        {
+            
+            if (!UInt32.TryParse(Path.GetFileNameWithoutExtension(f), out var fileId))
+            {
+                continue;
+            }
+            File.Copy(f,_options.DirPath + Path.GetFileName(f));
+        }
+        
+        
+        
+    }
     private void LoadIndexer(List<DataFile> dataFiles)
     {
         // key: 事务序列号 value：同一批事务序列号的记录
         var transactionRecords = new Dictionary<UInt32, List<LogRecord>>();
+        bool hasMerge = File.Exists(Path.Join(_options.DirPath + MergeDirName, MergeFinishedFileName))
+                        && File.Exists(Path.Join(_options.DirPath + MergeDirName, HintFileName)); // 是否有合并的文件
+        UInt32 recentFileId = 0;
+        if (hasMerge)
+        {
+            // 获取最近未参与Merge的文件ID
+            //var io = new FileIO(Path.Join(_options.DirPath + MergeDirName, MergeFinishedFileName));
+            var io = IOManagerFactory.Create(_options.IOType,
+                Path.Join(_options.DirPath + MergeDirName, MergeFinishedFileName));
+            var finishedDataFile = new DataFile(0,io);
+            var finishedRecord = finishedDataFile.ReadLogRecord(0);
+        
+            recentFileId = BitConverter.ToUInt32(finishedRecord!.Value);
+        }
         
         foreach (var dataFile in dataFiles)
         {
+            // 跳过已经从hint文件加载的数据
+            if (hasMerge && dataFile.FileID < recentFileId)
+            {
+                continue;
+            }
+            
             UInt64 offset = 0;
             // 循环加载数据文件中的所有记录
             while (true)
@@ -187,15 +322,20 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
                 ThrowHelper.ThrowInvalidDataException("Data file corruption");
             }
 
-            var fileID = Convert.ToUInt32(Path.GetFileNameWithoutExtension(f));
-            IIOManager io = new FileIO(f);
-            var datafile = new DataFile(fileID,io);
+            if (!UInt32.TryParse(Path.GetFileNameWithoutExtension(f), out var fileId))
+            {
+                continue;
+            }
+            
+            IIOManager io = IOManagerFactory.Create(_options.IOType,f);
+            var datafile = new DataFile(fileId,io);
             dataFiles.Add(datafile);
         }
         
         return dataFiles.OrderBy(f=> f.FileID).ToList();
     }
 
+    #endregion
 
     public bool Contains(byte[] key) => Index.Contains(key);
     
@@ -223,6 +363,8 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         {
             return false;
         }
+
+        _reclaimableSize += (UInt64)GetLogRecord(key).Encode().Length;
         
         // 删除的方式为追加一条ReocrdType类型为Deleted的数据表示删除(软删除)
         var record = new LogRecord()
@@ -249,10 +391,17 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
             Value = value,
             RecordType = LogRecordType.Normal
         };
+
+        bool isExist = Index.Contains(key);  
         
         // 追加写入记录
         LogRecordPos recordPos = AppendLogRecord(record);
-        
+
+        if (isExist)
+        {
+            _reclaimableSize += (UInt64)GetLogRecord(key).Encode().Length;
+        }
+     
         // 记录内存索引
         return Index.Put(key, recordPos);
     }
@@ -271,7 +420,7 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
             
             // 创建新的数据文件
             string fileName = Path.Join(_options.DirPath, _activeFile.FileID.ToString() + DataFileExtension);
-            var dataFile = new DataFile(_activeFile.FileID + 1, new FileIO(fileName));
+            var dataFile = new DataFile(_activeFile.FileID + 1,IOManagerFactory.Create(_options.IOType,fileName));
             
             // 将当前获取文件添加到就的数据文件中
             _olderFiles.Add(_activeFile.FileID,_activeFile);
@@ -281,8 +430,9 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
             
             //  记录写入的偏移量
             var offset = _activeFile.WriteOffset;
+            
             _activeFile.Write(encodedRecord);
-
+            
             if (_options.AlwaySync)
             {
                 _activeFile.Sync();
@@ -306,7 +456,12 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
     public byte[] Get(byte[] key)
     {
         Guard.IsNotNull(key);
+        return GetLogRecord(key).Value;
+    }
 
+    private LogRecord GetLogRecord(byte[] key)
+    {
+        LogRecord? record;
         LogRecordPos? recordPos = Index.Get(key);
         // 如果recordPos为空，表示找不到数据
         if (recordPos == null)
@@ -315,7 +470,6 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         }
         
         // 从数据文件获取 Value
-        LogRecord? record;
         if (recordPos.FileID == _activeFile.FileID)
         {
             record = _activeFile.ReadLogRecord(recordPos.Offset);
@@ -339,11 +493,131 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
                 ThrowHelper.ThrowInvalidDataException("Record type is not normal");
             }
         }
-       
-        return record.Value;
+
+        return record;
+    }
+    public void Merge()
+    {
+        if ((double)_reclaimableSize / (double)DBHelper.GetDirectorySize(_options.DirPath) < _options.ReclaimableRatio)
+        {
+            return;
+        }
+        // 减少的 
+        UInt64 reducedReclaimableSize = 0;
+        // 获取数据文件
+        List<DataFile> dataFiles = new();
+        IIOManager? io;
+        foreach (var (fid,df) in _olderFiles)
+        {
+           // io = new FileIO(Path.Join(_options.DirPath,fid.ToString() + DataFileExtension));
+           io = IOManagerFactory.Create(_options.IOType,Path.Join(_options.DirPath,fid.ToString() + DataFileExtension));
+            var datafile = new DataFile(fid,io);
+            dataFiles.Add(datafile);
+        }
+
+        var activeDataFile = _activeFile;
+        activeDataFile.Sync();
+       // io = new FileIO(Path.Join(_options.DirPath,activeDataFile.FileID.ToString() + DataFileExtension))
+          io = IOManagerFactory.Create(_options.IOType,Path.Join(_options.DirPath,activeDataFile.FileID.ToString() + DataFileExtension));
+        var newActiveDataFile = new DataFile(activeDataFile.FileID + 1,io);
+        _activeFile = newActiveDataFile;
+        
+        dataFiles.Add(activeDataFile);
+
+        var mergeDir = GetMergeDirPath();
+
+        if (Directory.Exists(mergeDir))
+        {
+            Directory.Delete(mergeDir,true);
+        }
+
+        Directory.CreateDirectory(mergeDir);
+
+        var option = new EngineOptions(mergeDir,_options.DataFileSize);
+        var mergeEngine = new Engine(option);
+
+        // 创建Hint文件，用于记录重写时的索引
+        var hintFile = CreateHintFile(mergeDir);
+        foreach (var df in dataFiles)
+        {
+            UInt64 offset = 0;
+            // 循环加载数据文件中的所有记录
+            while (true)
+            {
+                var logRecord = df.ReadLogRecord(offset);
+                if (logRecord == null)
+                {
+                    // 读到最后一条数据了
+                    break;
+                }
+                
+                var (_, key) = ParseTransactionNumberAndKey(logRecord.Key);
+                // 检查是否是有效数据 
+                // fileID & key & offset 跟内存索引的数据相等 数据才有效
+                if (Index.Contains(key))
+                {
+                   LogRecordPos pos = Index.Get(key)!;
+                   if (pos.FileID == df.FileID && offset == pos.Offset)
+                   {
+                       // 重写到用于合并的存储引擎实例
+                       // 建事务序列号修改为普通数据
+                       logRecord.Key = EncodeKeyWithTransactionNo(key, NormalNumber);
+                       var newPos= mergeEngine.AppendLogRecord(logRecord);
+                       
+                       // 记录重写后的索引
+                       var hintRecord = new LogRecord()
+                       {
+                            Key = key,
+                            Value = LogRecordPos.Encode(newPos),
+                            RecordType = LogRecordType.Normal
+                       };
+                       hintFile.Write(hintRecord.Encode());
+
+                       reducedReclaimableSize += (UInt32)logRecord.Encode().Length;
+                   }
+                }
+                offset += (UInt64)(LogRecord.MaxHeaderSize() + logRecord.Key.Length + logRecord.Value.Length + 4);
+            }
+        }
+        
+        // 保证数据持久化
+        mergeEngine.Sync();
+        hintFile.Sync();
+        
+        // 创建一个文件标识Merge完成
+        var finishedFile = CreateMergeFinishedFile(mergeDir);
+        // 记录最近没有参与合并的数据文件ID
+        var finishedRecord = new LogRecord()
+        {
+            Key = Encoding.UTF8.GetBytes(MergeFinishedFileName),
+            Value = BitConverter.GetBytes(activeDataFile.FileID + 1),
+            RecordType = LogRecordType.Normal,
+        };
+        finishedFile.Write(finishedRecord.Encode());
+        
+        finishedFile.Sync();
+
+        _reclaimableSize -= reducedReclaimableSize;
     }
 
+    private string GetMergeDirPath()
+    {
+        // 跟原引擎文件夹同一目录
+        return _options.DirPath + MergeDirName;
+    }
 
+    private DataFile CreateHintFile(string dir)
+    {
+        //var io = new FileIO(Path.Join(dir,HintFileName));
+        var io = IOManagerFactory.Create(_options.IOType,Path.Join(dir,HintFileName));
+        return new DataFile(0,io);
+    }
+    private DataFile CreateMergeFinishedFile(string dir)
+    {
+       //  var io = new FileIO(Path.Join(dir,MergeFinishedFileName));
+       var io = IOManagerFactory.Create(_options.IOType,Path.Join(dir,MergeFinishedFileName));
+        return new DataFile(0,io);
+    }
     public IEnumerable<byte[]> GetKeys() => Index.GetKeys();
     public IEnumerator<KeyValuePair<byte[], LogRecordPos>> GetEnumerator()
     {
@@ -354,6 +628,14 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
     {
         return this.GetEnumerator();
     }
+
+    public Stat GetStat() 
+        => new Stat(Index.GetKeys().Count(),
+            _olderFiles.Count + 1,
+            _reclaimableSize,
+            (UInt64)DBHelper.GetDirectorySize(_options.DirPath));
+    
+    
     // 将事务序列号编码到Key中
     internal byte[] EncodeKeyWithTransactionNo(byte[] key,UInt32 number)
     {
@@ -364,10 +646,25 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         writer.Write(key);
         return stream.ToArray();
     }
+    
+    
+    /// <summary>
+    /// 备份当前数据库目录到 destDir
+    /// </summary>
+    /// <param name="destDir">目标目录</param>
+    public void BackUp(string destDir)
+    {
+        if (!Directory.Exists(destDir))
+        {
+            Directory.CreateDirectory(destDir);
+        }
+       DBHelper.CopyDirectory(_options.DirPath,destDir); 
+    }
     public void Sync()
     {
         _activeFile.Sync();
     }
+    
 
     public void Dispose()
     {

@@ -67,7 +67,6 @@ internal class DataFile: IDisposable
         keyValueBuf.CopyTo(recordBuf,headerBuf.Length);
         
         LogRecord record = LogRecord.Decode(recordBuf);
-        
         return record;
     }
 
