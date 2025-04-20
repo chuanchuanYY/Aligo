@@ -28,12 +28,12 @@ public class DBService
         return Encoding.UTF8.GetString(result);
     }
 
-    public bool Put(string key, string value)
+    public KeyValuePair<byte[],byte[]> Put(string key, string value)
     {
-        return _engine.Put(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(value));
+            return _engine.Put(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(value));
     }
 
-    public bool Delete(string key)
+    public byte[] Delete(string key)
     {
         return _engine.Delete(Encoding.UTF8.GetBytes(key));
     }

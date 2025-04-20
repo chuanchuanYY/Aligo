@@ -1,6 +1,6 @@
-﻿namespace Core.IO;
+﻿using Core.Exceptions;
 
-
+namespace Core.IO;
 
 public enum IOManagerType
 {
@@ -18,11 +18,27 @@ internal class IOManagerFactory
         };
     public static IIOManager CreateFileIO(string path)
     {
-        return new FileIO(path);
+        try
+        {
+            return new FileIO(path);
+        }
+        catch (Exception e)
+        {
+            throw new Exception(ErrorMessage.CreateIOManagerError,e);
+        }
     }
 
     public static IIOManager CreateMemoryMap(string path)
     {
-        return new MemoryMap(path);
+
+        try
+        {
+            return new MemoryMap(path);
+        }
+        catch (Exception e)
+        {
+            throw new Exception(ErrorMessage.CreateIOManagerError,e);
+        }
+     
     }
 }

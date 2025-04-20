@@ -15,9 +15,10 @@ public class DataFileTest
          var path = Path.GetTempFileName();
          IIOManager io = new FileIO(path);
          var datafile = new DataFile(1, io);
-         
-         var writeResult = datafile.Write(Encoding.UTF8.GetBytes("Hello World"));
-         Assert.IsTrue(writeResult);
+
+         var data = KeyValueHelper.GetValue(1);
+         var writeResult = datafile.Write(data);
+         Assert.AreEqual(data.Length,writeResult);
          io.Dispose();
          File.Delete(path);
      }
@@ -36,7 +37,7 @@ public class DataFileTest
             RecordType = LogRecordType.Normal,
         };
         var writeResult = datafile.Write(record.Encode());
-        Assert.IsTrue(writeResult);
+        Assert.AreEqual(record.Encode().Length,writeResult);
         var readResult = datafile.ReadLogRecord(0);
         Assert.NotNull(readResult);
         Assert.That(() => StructuralComparisons.StructuralEqualityComparer.Equals(record.Key, readResult.Key)
@@ -69,7 +70,7 @@ public class DataFileTest
                 RecordType = LogRecordType.Normal,
             };
             var writeResult = datafile.Write(record.Encode());
-            Assert.IsTrue(writeResult);
+            Assert.AreEqual(record.Encode().Length,writeResult);
         }
 
         ulong offset = 0;

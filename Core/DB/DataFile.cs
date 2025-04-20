@@ -4,6 +4,7 @@ using CommunityToolkit.Diagnostics;
 using CommunityToolkit.HighPerformance.Buffers;
 using Core.Common;
 using Core.Data;
+using Core.Exceptions;
 using Core.IO;
 using Microsoft.Extensions.Logging;
 
@@ -21,22 +22,42 @@ internal class DataFile: IDisposable
         _ioManager = ioManager;
         _logger = Log.Factory.CreateLogger<DataFile>();
     }
-
-    public bool Write(byte[] buf)
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="buf"></param>
+    /// <returns></returns>
+    public UInt64 Write(byte[] buf)
     {
-       var writeCount = _ioManager.Write(buf);
-       if (writeCount != (ulong)buf.Length)
-       {
-           return false;
-       }
-
-       WriteOffset += writeCount;
-       return true;
+        try
+        {
+            var writeCount = _ioManager.Write(buf);
+            WriteOffset += writeCount;
+            return writeCount;
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e,ErrorMessage.WriteDataFileError);
+            throw;
+        }
+     
     }
-
+    
+    /// <summary>
+    /// <exception cref="IOException"></exception>
+    /// </summary>
     public void Sync()
     {
-        _ioManager.Sync();
+        try
+        {
+            _ioManager.Sync();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e,ErrorMessage.SyncError);
+            throw;
+        }
     }
 
     public LogRecord? ReadLogRecord(UInt64 offset)
@@ -44,30 +65,38 @@ internal class DataFile: IDisposable
         // +----------header------------+
         // | type | keySize | valueSize | Key | Value | crc |
         byte[] headerBuf = new byte[LogRecord.MaxHeaderSize()];
-
-        if (_ioManager.Read(headerBuf, offset) != (ulong)headerBuf.Length)
+        try
         {
-            return null;
-        }
+            if (_ioManager.Read(headerBuf, offset) != (ulong)headerBuf.Length)
+            {
+                return null;
+            }
         
-        // 获取KeySize 和 valueSize
-        var headerSpan = headerBuf.AsSpan();
+            // 获取KeySize 和 valueSize
+            var headerSpan = headerBuf.AsSpan();
       
-        UInt32 keySize =   BitConverter.ToUInt32(headerSpan.Slice(1, 4));
-        UInt32 valueSize = BitConverter.ToUInt32(headerSpan.Slice(5,4));
-        // 获取完整记录
-        var keyValueBuf =new byte[(int)(keySize + valueSize + 4)];
-        if (_ioManager.Read(keyValueBuf, offset + (ulong)headerSpan.Length) != (ulong)keyValueBuf.Length)
-        {
-            return null;
-        }
+            UInt32 keySize =   BitConverter.ToUInt32(headerSpan.Slice(1, 4));
+            UInt32 valueSize = BitConverter.ToUInt32(headerSpan.Slice(5,4));
+            // 获取完整记录
+            var keyValueBuf =new byte[(int)(keySize + valueSize + 4)];
+            if (_ioManager.Read(keyValueBuf, offset + (ulong)headerSpan.Length) != (ulong)keyValueBuf.Length)
+            {
+                return null;
+            }
 
-        var recordBuf = new byte[headerBuf.Length + keyValueBuf.Length];
-        headerBuf.CopyTo(recordBuf,0);
-        keyValueBuf.CopyTo(recordBuf,headerBuf.Length);
+            var recordBuf = new byte[headerBuf.Length + keyValueBuf.Length];
+            headerBuf.CopyTo(recordBuf,0);
+            keyValueBuf.CopyTo(recordBuf,headerBuf.Length);
         
-        LogRecord record = LogRecord.Decode(recordBuf);
-        return record;
+            LogRecord record = LogRecord.Decode(recordBuf);
+            return record;
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e,ErrorMessage.ReadLogRecordError);
+            throw new Exception(ErrorMessage.ReadLogRecordError);
+        }
+      
     }
 
     public void Dispose()

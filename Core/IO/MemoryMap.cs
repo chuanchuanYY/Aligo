@@ -1,6 +1,7 @@
 ﻿using System.IO.MemoryMappedFiles;
 using CommunityToolkit.Diagnostics;
 using Core.Common;
+using Core.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace Core.IO;
@@ -19,14 +20,13 @@ public class MemoryMap: IIOManager
         try
         {
             FileInfo fileInfo = new FileInfo(filePath);
-        
             _mapFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open);
             _mapAccessor = _mapFile.CreateViewAccessor(0,fileInfo.Length);
         }
         catch (Exception e)
         {
-            _logger.LogError(e,"Failed to Open File");
-            ThrowHelper.ThrowExternalException();
+            _logger.LogError(e,ErrorMessage.OpenFileError);
+            throw new IOException(ErrorMessage.OpenFileError);
         }
     }
     public void Dispose()
@@ -38,7 +38,16 @@ public class MemoryMap: IIOManager
 
     public ulong Read(byte[] buf, ulong offset)
     {
-        return (ulong)_mapAccessor.ReadArray((long)offset,buf,0,buf.Length);
+        try
+        {
+           var result =  (ulong)_mapAccessor.ReadArray((long)offset,buf,0,buf.Length);
+           return result;
+        }
+        catch (Exception e)
+        {
+           _logger.LogError(e,ErrorMessage.ReadFileError);
+            throw new IOException(ErrorMessage.ReadFileError);
+        }
     }
 
     public ulong Write(byte[] buf)
@@ -48,6 +57,14 @@ public class MemoryMap: IIOManager
 
     public void Sync()
     {
-        _mapAccessor.Flush();
+        try
+        {
+            _mapAccessor.Flush();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e,ErrorMessage.SyncError);
+            throw new IOException(ErrorMessage.SyncError);
+        }
     }
 }

@@ -4,6 +4,7 @@ using System.Text;
 using CommunityToolkit.Diagnostics;
 using Core.Common;
 using Core.Data;
+using Core.Exceptions;
 using Core.IO;
 using Microsoft.Extensions.Logging;
 
@@ -29,7 +30,6 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
     internal  readonly  Mutex CommitLock = new Mutex();
     private readonly ILogger<Engine> _logger;
     
-    
     // 用于记录统计数据
     private UInt64 _reclaimableSize; // 磁盘可回收的空间，单位字节
 
@@ -54,66 +54,78 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
             }
             catch (Exception e)
             {
-               _logger.LogError(e, "Failed to create directory");
-                throw;
+               _logger.LogError(e, ErrorMessage.CreateDatabaseDirectoryError);
+                throw new Exception(ErrorMessage.CreateDatabaseDirectoryError);
             }
-        }
-        
-        // 加载Merge数据文件
-        LoadMergeDataFiles();
-        // 加载数据文件
-        List<DataFile> datafiles = LoadDataFiles();
-        if (datafiles.Count == 0)
-        {
-            string fileName = Path.Join(_options.DirPath, "0" + DataFileExtension);
-            _activeFile = new DataFile(0,IOManagerFactory.Create(_options.IOType,fileName));
-            return;
         }
 
-        if (datafiles.Count >= 1)
+        try
         {
-            for (int i = 0; i < datafiles.Count -1; i++)
+            // 加载Merge数据文件
+            LoadMergeDataFiles();
+            // 加载数据文件
+            List<DataFile> datafiles = LoadDataFiles();
+            if (datafiles.Count == 0)
             {
-                var datafile = datafiles[i];
-                _olderFiles.Add(datafile.FileID,datafile);
+                string fileName = Path.Join(_options.DirPath, "0" + DataFileExtension);
+                _activeFile = new DataFile(0,IOManagerFactory.Create(_options.IOType,fileName));
+                return;
             }
-        }
-        _activeFile = datafiles.Last();
-        
-        // 加载hint索引文件
-        if (File.Exists(Path.Join(_options.DirPath + MergeDirName, HintFileName)))
-        {
-            //var io = new FileIO(Path.Join(_options.DirPath + MergeDirName, HintFileName));
-            var io = IOManagerFactory.Create(_options.IOType,Path.Join(_options.DirPath + MergeDirName, HintFileName));
-            var hintFile = new DataFile(0,io);
-            UInt64 offset = 0;
-            while (true)
+
+            if (datafiles.Count >= 1)
             {
-                // hint索引文件存储的记录value为LogrecordPos
-                var record = hintFile.ReadLogRecord(offset);
-                if (record == null)
-                    break;
-                var (_,key) = ParseTransactionNumberAndKey(record.Key);
+                for (int i = 0; i < datafiles.Count -1; i++)
+                {
+                    var datafile = datafiles[i];
+                    _olderFiles.Add(datafile.FileID,datafile);
+                }
+            }
+            _activeFile = datafiles.Last();
+        
+            // 加载hint索引文件
+            if (File.Exists(Path.Join(_options.DirPath + MergeDirName, HintFileName)))
+            {
+                //var io = new FileIO(Path.Join(_options.DirPath + MergeDirName, HintFileName));
+                var io = IOManagerFactory.Create(_options.IOType,Path.Join(_options.DirPath + MergeDirName, HintFileName));
+                var hintFile = new DataFile(0,io);
+                UInt64 offset = 0;
+                while (true)
+                {
+                    // hint索引文件存储的记录value为LogrecordPos
+                    var record = hintFile.ReadLogRecord(offset);
+                    if (record == null)
+                        break;
+                    var (_,key) = ParseTransactionNumberAndKey(record.Key);
                 
-                // 解码LogrecordPos
-                var pos = LogRecordPos.Decode(record.Value);
-                Index.Put(key,pos);
-            }
+                    // 解码LogrecordPos
+                    var pos = LogRecordPos.Decode(record.Value);
+                    Index.Put(key,pos);
+                }
             
-        }
+            }
       
-        // 加载内存索引
-        LoadIndexer(datafiles);
+            // 加载内存索引
+            LoadIndexer(datafiles);
         
-        // todo ...
-        // 将Merge文件加载回来后，要删除merge目录的，不然重启又要去复制一遍文件等等
+            // todo ...
+            // 将Merge文件加载回来后，要删除merge目录的，不然重启又要去复制一遍文件等等
         
         
-        // 如果IOManagerType 是 MemoryMap 类型，在初始化完成后将它修改为FileIO
-        // MemoryMap只用于加速初始化
-        _options.IOType = IOManagerType.FileIO;
+            // 如果IOManagerType 是 MemoryMap 类型，在初始化完成后将它修改为FileIO
+            // MemoryMap只用于加速初始化
+            _options.IOType = IOManagerType.FileIO;
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, ErrorMessage.EngineInitError);
+            throw new Exception(ErrorMessage.EngineInitError);
+        }
+       
     }
-
+    
+    /// <summary>
+    /// <exception cref="Exception"></exception>
+    /// </summary>
     private void LoadMergeDataFiles()
     {
         // 判断Merge目录是否存在
@@ -141,48 +153,55 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         {
             return;
         }
+
+
+        try
+        {
+            // 获取最近未参与Merge的文件ID
+            //var io = new FileIO(finishedFilePath);
+            var io = IOManagerFactory.Create(_options.IOType, finishedFilePath);
+            var finishedDataFile = new DataFile(0,io);
+            var finishedRecord = finishedDataFile.ReadLogRecord(0);
         
-        // 获取最近未参与Merge的文件ID
-        //var io = new FileIO(finishedFilePath);
-        var io = IOManagerFactory.Create(_options.IOType, finishedFilePath);
-        var finishedDataFile = new DataFile(0,io);
-        var finishedRecord = finishedDataFile.ReadLogRecord(0);
-        
-        var recentFileId = BitConverter.ToUInt32(finishedRecord!.Value);
-        // 先删除已经Merge的文件
-        // 删除文件id小于最近参与merger文件id的文件
-        var willDeleteFiles = Directory.GetFiles(_options.DirPath)
-            .Where(f =>
+            var recentFileId = BitConverter.ToUInt32(finishedRecord!.Value);
+            // 先删除已经Merge的文件
+            // 删除文件id小于最近参与merger文件id的文件
+            var willDeleteFiles = Directory.GetFiles(_options.DirPath)
+                .Where(f =>
+                {
+                    if (!UInt32.TryParse(Path.GetFileNameWithoutExtension(f), out var fileId))
+                    {
+                        return false;
+                    }
+
+                    if (fileId < recentFileId)
+                    {
+                        return true;
+                    }
+                    return false;
+                });
+            foreach (var f in willDeleteFiles)
             {
+                File.Delete(f);
+            }
+        
+            // 将merge 后的文件复制回引擎目录
+            foreach (var f in files)
+            {
+            
                 if (!UInt32.TryParse(Path.GetFileNameWithoutExtension(f), out var fileId))
                 {
-                    return false;
+                    continue;
                 }
-
-                if (fileId < recentFileId)
-                {
-                    return true;
-                }
-                return false;
-            });
-        foreach (var f in willDeleteFiles)
-        {
-            File.Delete(f);
-        }
-        
-        // 将merge 后的文件复制回引擎目录
-        foreach (var f in files)
-        {
-            
-            if (!UInt32.TryParse(Path.GetFileNameWithoutExtension(f), out var fileId))
-            {
-                continue;
+                File.Copy(f,_options.DirPath + Path.GetFileName(f));
             }
-            File.Copy(f,_options.DirPath + Path.GetFileName(f));
+
         }
-        
-        
-        
+        catch (Exception e)
+        {
+           _logger.LogError(e,ErrorMessage.LoadMergeDataFilesError);
+            throw;
+        }
     }
     private void LoadIndexer(List<DataFile> dataFiles)
     {
@@ -307,6 +326,13 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         
         return (transactionNo, key);
     }
+    
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <exception cref="InvalidDataException"></exception>
+    /// <returns></returns>
     private List<DataFile> LoadDataFiles()
     {   
         var files = Directory.GetFiles(_options.DirPath);
@@ -347,13 +373,19 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         return result;
     }
     
-    
     //
     public WriteBatch CreateWriteBatch(WriteBatchOptions options)
     {
         return new WriteBatch(this,options);
     }
-    public bool Delete(byte[] key)
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="key"></param>
+    /// <exception cref="KeyNotFoundException"></exception>
+    /// <returns>已经删除的Value</returns>
+    public byte[] Delete(byte[] key)
     {
         Guard.IsNotNull(key);
         
@@ -361,11 +393,12 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         LogRecordPos? recordPos = Index.Get(key);
         if (recordPos == null)
         {
-            return false;
+            throw new KeyNotFoundException();
         }
 
         _reclaimableSize += (UInt64)GetLogRecord(key).Encode().Length;
-        
+
+        var oldRecord = GetLogRecord(key);
         // 删除的方式为追加一条ReocrdType类型为Deleted的数据表示删除(软删除)
         var record = new LogRecord()
         {
@@ -377,9 +410,19 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         AppendLogRecord(record);
         Index.Delete(key);
         
-        return true;
+        return oldRecord.Value;
     }
-    public bool Put(byte[] key, byte[] value)
+    
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="key"></param>
+    /// <param name="value"></param>
+    /// <exception cref="ArgumentNullException"></exception>
+    /// <exception cref="Exception"></exception>
+    /// <returns>已经添加成功的键值对</returns>
+    public KeyValuePair<byte[],byte[]> Put(byte[] key, byte[] value)
     {
         Guard.IsNotNull(key);
         Guard.IsNotNull(value);
@@ -392,73 +435,116 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
             RecordType = LogRecordType.Normal
         };
 
-        bool isExist = Index.Contains(key);  
-        
-        // 追加写入记录
-        LogRecordPos recordPos = AppendLogRecord(record);
+        bool isExist = Index.Contains(key);
 
-        if (isExist)
+        try
         {
-            _reclaimableSize += (UInt64)GetLogRecord(key).Encode().Length;
+            // 追加写入记录
+            LogRecordPos recordPos = AppendLogRecord(record);
+            if (isExist)
+            {
+                _reclaimableSize += (UInt64)GetLogRecord(key).Encode().Length;
+            }
+            // 记录内存索引
+            var putResult =  Index.Put(key, recordPos);
+            if (!putResult)
+            {
+                throw new Exception(ErrorMessage.PutIndexError);
+            }
+
+            return new KeyValuePair<byte[], byte[]>(key,value);
         }
-     
-        // 记录内存索引
-        return Index.Put(key, recordPos);
+        catch (Exception e)
+        {
+           _logger.LogError(e,ErrorMessage.EnginePutError);
+            throw new Exception(ErrorMessage.EnginePutError);
+        }
     }
 
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="record"></param>
+    /// <returns></returns>
+    /// <exception cref="ArgumentNullException"></exception>
+    /// <exception cref="Exception"></exception>
     internal LogRecordPos AppendLogRecord(LogRecord record)
     {
         Guard.IsNotNull(record);
         
         var encodedRecord = record.Encode();
-        
-        // 判断写入是否会超出阈值
-        if (_activeFile.WriteOffset + (ulong)encodedRecord.Length > _options.DataFileSize)
-        {
-            // 持久化当前活跃文件
-            _activeFile.Sync();
-            
-            // 创建新的数据文件
-            string fileName = Path.Join(_options.DirPath, _activeFile.FileID.ToString() + DataFileExtension);
-            var dataFile = new DataFile(_activeFile.FileID + 1,IOManagerFactory.Create(_options.IOType,fileName));
-            
-            // 将当前获取文件添加到就的数据文件中
-            _olderFiles.Add(_activeFile.FileID,_activeFile);
-            
-            // 将当前活跃文件切换为新创建的数据文件
-            _activeFile = dataFile;
-            
-            //  记录写入的偏移量
-            var offset = _activeFile.WriteOffset;
-            
-            _activeFile.Write(encodedRecord);
-            
-            if (_options.AlwaySync)
-            {
-                _activeFile.Sync();
-            }
 
-            return new LogRecordPos(_activeFile.FileID,offset);
-        }
-        else
+        try
         {
-            var offset = _activeFile.WriteOffset;
-            _activeFile.Write(encodedRecord);
-            
-            if (_options.AlwaySync)
+            // 判断写入是否会超出阈值
+            if (_activeFile.WriteOffset + (ulong)encodedRecord.Length > _options.DataFileSize)
             {
+                // 持久化当前活跃文件
                 _activeFile.Sync();
+            
+                // 创建新的数据文件
+                string fileName = Path.Join(_options.DirPath, _activeFile.FileID.ToString() + DataFileExtension);
+                var dataFile = new DataFile(_activeFile.FileID + 1,IOManagerFactory.Create(_options.IOType,fileName));
+            
+                // 将当前获取文件添加到就的数据文件中
+                _olderFiles.Add(_activeFile.FileID,_activeFile);
+            
+                // 将当前活跃文件切换为新创建的数据文件
+                _activeFile = dataFile;
+            
+                //  记录写入的偏移量
+                var offset = _activeFile.WriteOffset;
+            
+                _activeFile.Write(encodedRecord);
+            
+                if (_options.AlwaySync)
+                {
+                    _activeFile.Sync();
+                }
+
+                return new LogRecordPos(_activeFile.FileID,offset);
             }
-            return new LogRecordPos(_activeFile.FileID,offset);
+            else
+            {
+                var offset = _activeFile.WriteOffset;
+                _activeFile.Write(encodedRecord);
+            
+                if (_options.AlwaySync)
+                {
+                    _activeFile.Sync();
+                }
+                return new LogRecordPos(_activeFile.FileID,offset);
+            }
         }
+        catch (Exception e)
+        {
+            _logger.LogError(e,ErrorMessage.AppendLogRecordError);
+            throw new Exception(ErrorMessage.AppendLogRecordError);
+        }
+    
     }
-
+   
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="key"></param>
+    /// <returns></returns>
+    /// <exception cref="ArgumentNullException"></exception>
+    /// <exception cref="KeyNotFoundException"></exception>
     public byte[] Get(byte[] key)
     {
         Guard.IsNotNull(key);
         return GetLogRecord(key).Value;
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="key"></param>
+    /// <returns></returns>
+    /// <exception cref="KeyNotFoundException"></exception>
+    /// <exception cref="Exception"></exception>
     private LogRecord GetLogRecord(byte[] key)
     {
         LogRecord? record;
@@ -466,7 +552,7 @@ public class Engine : IEnumerable<KeyValuePair<byte[],LogRecordPos>>,IDisposable
         // 如果recordPos为空，表示找不到数据
         if (recordPos == null)
         {
-            ThrowHelper.ThrowArgumentException("key not found");
+           throw new KeyNotFoundException();
         }
         
         // 从数据文件获取 Value

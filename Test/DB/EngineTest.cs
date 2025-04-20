@@ -18,7 +18,7 @@ public class EngineTest
         var engine = new Engine(engineOps);
 
         var putKey1Res = engine.Put(KeyValueHelper.GetKey(1),KeyValueHelper.GetValue(1));
-        Assert.True(putKey1Res);
+        Assert.NotNull(putKey1Res);
         engine.Dispose();
         Directory.Delete(dirPath,true);
     }
@@ -37,7 +37,7 @@ public class EngineTest
         keyValues.ForEach(item =>
         {
             var putKeyRes = engine.Put(item.Item1,item.Item2);
-            Assert.True(putKeyRes);
+            Assert.NotNull(putKeyRes);
         });
         var keyValues2 = Enumerable.Range(0, 50)
             .Select(n => (KeyValueHelper.GetKey(n), KeyValueHelper.GetValue(n)))
@@ -46,7 +46,7 @@ public class EngineTest
         keyValues2.ForEach(item =>
         {
             var putKeyRes = engine.Put(item.Item1,item.Item2);
-            Assert.True(putKeyRes);
+            Assert.NotNull(putKeyRes);
         });
         engine.Sync();
         var stat = engine.GetStat();
@@ -70,8 +70,8 @@ public class EngineTest
 
         var putKey1Res = engine.Put(KeyValueHelper.GetKey(1),KeyValueHelper.GetValue(1));
         var putKey2Res = engine.Put(KeyValueHelper.GetKey(1),KeyValueHelper.GetValue(2));
-        Assert.True(putKey1Res);
-        Assert.True(putKey2Res);
+        Assert.NotNull(putKey1Res);
+        Assert.NotNull(putKey2Res);
         
         // value will be updated value
         var readUpdatedValue = engine.Get(KeyValueHelper.GetKey(1));
@@ -91,7 +91,7 @@ public class EngineTest
         for (int i = 0; i < putCount; i++)
         {
             var putKey1Res = engine.Put(KeyValueHelper.GetKey(i),KeyValueHelper.GetValue(i));
-            Assert.True(putKey1Res);
+            Assert.NotNull(putKey1Res);
         }
         engine.Dispose();
         
@@ -129,7 +129,7 @@ public class EngineTest
         
         engine.Put(KeyValueHelper.GetKey(1),KeyValueHelper.GetValue(1));
         var result =engine.Delete(KeyValueHelper.GetKey(1));
-        Assert.True(result);
+        Assert.NotNull(result);
         engine.Dispose();
         Directory.Delete(dirPath,true);
     }
@@ -165,7 +165,7 @@ public class EngineTest
         for (int i = 0; i < putCount; i++)
         {
             var putKey1Res = engine.Put(KeyValueHelper.GetKey(i),KeyValueHelper.GetValue(i));
-            Assert.True(putKey1Res);
+            Assert.NotNull(putKey1Res);
         }
         
         engine.BackUp(Path.Join(dirPath,"BackupDir"));

@@ -1,5 +1,6 @@
 ﻿using CommunityToolkit.Diagnostics;
 using Core.Common;
+using Core.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace Core.IO;
@@ -20,7 +21,6 @@ internal class FileIO: IIOManager
         Guard.IsNotNullOrEmpty(filePath);
         _logger = Log.Factory.CreateLogger<FileIO>();
         // Append access can be requested only in write-only mode. (Parameter 'access')
-
         try
         {
             _readStream = new FileStream(filePath,
@@ -29,12 +29,11 @@ internal class FileIO: IIOManager
             _writeStream = new FileStream(filePath,
                 FileMode.Append,
                 FileAccess.Write,FileShare.ReadWrite);
-
         }
         catch (Exception e)
         {
-            _logger.LogError(e,"Failed to Open File");
-            throw;
+            _logger.LogError(e,ErrorMessage.OpenFileError);
+            throw new IOException(ErrorMessage.OpenFileError);
         }
   
     }
@@ -56,8 +55,8 @@ internal class FileIO: IIOManager
         }
         catch (Exception e)
         {
-            _logger.LogError(e,"read file failed");
-            throw;
+            _logger.LogError(e,ErrorMessage.ReadFileError);
+            throw new IOException(ErrorMessage.ReadFileError);
         }
     }
     
@@ -77,8 +76,8 @@ internal class FileIO: IIOManager
         }
         catch (Exception e)
         {
-           _logger.LogError(e,"write file failed");
-            throw;
+           _logger.LogError(e,ErrorMessage.WriteFileError);
+            throw new IOException(ErrorMessage.WriteFileError);
         }
     }
     
@@ -93,15 +92,16 @@ internal class FileIO: IIOManager
         }
         catch (Exception e)
         {
-            _logger.LogError(e,"sync file failed");
-            throw;
+            _logger.LogError(e,ErrorMessage.SyncError);
+            throw new IOException(ErrorMessage.SyncError);
         }
+        
     }
 
     public void Dispose()
     {
-        _writeStream.Close();
-        _readStream.Close();
+        // _writeStream.Close();
+        // _readStream.Close();
         
         _readStream.Dispose();
         _writeStream.Dispose();

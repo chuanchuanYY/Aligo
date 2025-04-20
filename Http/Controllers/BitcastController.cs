@@ -20,9 +20,17 @@ public class BitcastController: ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public ActionResult<string> Get(string key)
     {   
-        // 异常处理有问题,没有考虑获取不值的情况，值不存在，正常情况。
+        // 异常处理有问题,没有考虑获取不到值的情况，值不存在，正常情况。
         // 以及其他异常意外情况
-        return _dbService.Get(key);
+        try
+        {
+            return _dbService.Get(key);
+        }
+        catch (Exception e)
+        {
+          return BadRequest("Key not found");
+        }
+      
     }
 
 
@@ -30,19 +38,29 @@ public class BitcastController: ControllerBase
     [Consumes("application/json")]
     public ActionResult<bool> Put(KeyValuePair<string,string> value)
     {
-       var result = _dbService.Put(value.Key, value.Value);
-       if (!result)
-       {
-           return BadRequest("put failed");
-       }
-       return  CreatedAtAction(nameof(Put), new { key = value.Key, value.Value });
+        try
+        {
+            var result = _dbService.Put(value.Key, value.Value);
+            return  CreatedAtAction(nameof(Put), new { key = value.Key, value.Value });
+        }
+        catch (Exception e)
+        {
+            return BadRequest("put failed");
+        }
     }
 
 
     [HttpDelete("{key}")]
-    public ActionResult<bool> Delete(string key)
+    public ActionResult<byte[]> Delete(string key)
     {
-        return _dbService.Delete(key);
+        try
+        {
+             return _dbService.Delete(key);
+        }
+        catch (Exception e)
+        {
+            return BadRequest("delete failed");
+        }
     }
 
 
