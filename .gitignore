@@ -2,3 +2,8 @@ bin/
 obj/
 .idea
 *.user
+
+
+
+
+BenchmarkDotNet.Artifacts/
