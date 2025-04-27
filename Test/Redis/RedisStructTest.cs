@@ -2,7 +2,6 @@
 using Redis;
 
 namespace Test.Redis;
-
 public class RedisStructTest
 {
     [Test]
@@ -101,4 +100,85 @@ public class RedisStructTest
         redis.Dispose();
         Directory.Delete(dirPath,true);
     }
+
+    [Test]
+    public void TestHashSet()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+
+        var setResult1 = redis.HashSet("MySet", "a", "10");
+        Assert.IsTrue(setResult1);
+        
+        var setResult2 = redis.HashSet("MySet", "b", "100");
+        Assert.IsTrue(setResult2);
+        
+        var setResult3 = redis.HashSet("MySet", "a", "1");
+        Assert.IsTrue(setResult3);
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+
+    [Test]
+    public void TestHashGet()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+
+        var setResult1 = redis.HashSet("MySet", "a", "10");
+        Assert.IsTrue(setResult1);
+        
+        var setResult2 = redis.HashSet("MySet", "b", "100");
+        Assert.IsTrue(setResult2);
+        
+        var setResult3 = redis.HashSet("MySet", "a", "1");
+        Assert.IsTrue(setResult3);
+        
+        
+        // get
+        var getResult1 = redis.HashGet("MySet","a");
+        Assert.AreEqual("1", getResult1);
+        
+        var getResult2 = redis.HashGet("MySet","b");
+        Assert.AreEqual("100", getResult2);
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+
+    [Test]
+    public void TestHashDel()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+
+        var setResult1 = redis.HashSet("MySet", "a", "10");
+        Assert.IsTrue(setResult1);
+        
+        var setResult2 = redis.HashSet("MySet", "b", "100");
+        Assert.IsTrue(setResult2);
+        
+        var setResult3 = redis.HashSet("MySet", "a", "1");
+        Assert.IsTrue(setResult3);
+        
+        // Del 
+        var delResult1 = redis.HashDel("MySet", "a");
+        Assert.AreEqual("1", delResult1);
+        
+        // get
+        var getResult1 = redis.HashGet("MySet","a");
+        Assert.IsNull(getResult1);
+            
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+    
+    
 }

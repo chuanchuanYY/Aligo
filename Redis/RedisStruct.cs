@@ -1,8 +1,8 @@
 ﻿using System.Text;
 using Core.DB;
+using Core.Exceptions;
 
 namespace Redis;
-
 
 public class RedisStruct: IDisposable
 {
@@ -78,6 +78,146 @@ public class RedisStruct: IDisposable
             return null;
         }
         
+    }
+    
+    
+    /// <summary>
+    /// 删除成功返回被删除的数据，没有找到指定的数据或删除失败返回null
+    /// </summary>
+    /// <param name="key"></param>
+    /// <param name="field"></param>
+    /// <returns></returns>
+    public string? HashDel(string key,string field)
+    {
+        var metadata = FindMetadata(key, Types.Hash);
+        // 当前key 没有字段（field）
+        if (metadata.Size == 0)
+        {
+            return null;
+        }
+        
+        var hashKey = new HashInternalKey(key,metadata.Version,field);
+        try
+        {
+            var value = _engine.Get(hashKey.Encode());
+
+            // if field exist,delete it and then update metadata size 
+            var wbOptions = new WriteBatchOptions();
+            var wb = _engine.CreateWriteBatch(wbOptions);
+            metadata.Size--;
+            wb.Put(Encoding.UTF8.GetBytes(key),metadata.Encode());
+            wb.Delete(hashKey.Encode());
+            wb.Commit();
+            
+            return Encoding.UTF8.GetString(value);
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+        
+    }
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="key"></param>
+    /// <param name="field"></param>
+    /// <returns></returns>
+    /// <exception cref="Exception"></exception>
+    public string? HashGet(string key, string field)
+    {
+        var metadata = FindMetadata(key, Types.Hash);
+        
+        // 当前key 没有字段（field）
+        if (metadata.Size == 0)
+        {
+            return null;
+        }
+        
+        // 根据元素据查找实际的filed 
+        var hashKey = new HashInternalKey(key,metadata.Version,field);
+
+        try
+        {
+            var value = _engine.Get(hashKey.Encode());
+            return Encoding.UTF8.GetString(value);
+        }
+        catch (KeyNotFoundException e)
+        {
+            return null;
+        }
+    }
+    public bool HashSet(string key,string filed,string value )
+    {
+        var metadata = FindMetadata(key,Types.Hash);
+
+        var internalKey = new HashInternalKey(key,metadata.Version,filed);
+        bool exist = true;
+        try
+        {
+            var result = _engine.Get(internalKey.Encode());
+        }
+        catch (KeyNotFoundException e)
+        {
+            exist = false;
+        }
+
+        var wbOptions = new WriteBatchOptions();
+        var wb = _engine.CreateWriteBatch(wbOptions);
+        if (!exist)
+        {
+            metadata.Size++;
+            wb.Put(Encoding.UTF8.GetBytes(key),metadata.Encode());
+        }
+        wb.Put(internalKey.Encode(),Encoding.UTF8.GetBytes(value));
+        wb.Commit();
+        return true;
+    }
+    private Metadata FindMetadata(string key,Types type)
+    {
+        bool exists = true;
+        Metadata? metadata = null;
+        try
+        {
+            var result = _engine.Get(Encoding.UTF8.GetBytes(key));
+            // decode 
+            metadata = Metadata.Decode(result);
+            if (metadata.Type != type)
+            {
+                throw new Exception(ErrorMessage.WrongOperationType);
+            }
+            
+            // 判断过期时间
+            var now = DateTime.Now;
+            if (metadata.Expire != 0 && now.Ticks > metadata.Expire )
+            {
+                exists = false;
+            }
+        }
+        catch (KeyNotFoundException e)
+        {
+            exists = false;
+        }
+
+        if (!exists)
+        {
+            metadata =  new Metadata()
+            {
+                Type = Types.Hash,
+                Expire = 0,
+                Version = DateTime.Now.Ticks,
+                Head = 0,
+                Tail =  0,
+            } ;
+
+            if (type == Types.List)
+            {
+                metadata.Head = long.MaxValue / 2;
+                metadata.Tail = long.MaxValue / 2;
+            }
+        }
+        return metadata!;
     }
     
     #region Generic

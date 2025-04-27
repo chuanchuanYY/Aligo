@@ -20,4 +20,8 @@ public class ErrorMessage
     public const string EnginePutError  = "Engine Put error";
     
     
+    
+    // redis 
+    public const string WrongOperationType = "Wrong operation type";
+    
 }
