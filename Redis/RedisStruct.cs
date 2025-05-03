@@ -51,6 +51,91 @@ public class RedisStruct: IDisposable
         }
     }
 
+    public string? LPop(string key)
+    {
+        return InnerPop(key);
+    }
+
+    public string? RPop(string key)
+    {
+        return InnerPop(key,false);
+    }
+    private string? InnerPop(string key,bool isLeft = true)
+    {
+        var metadata = FindMetadata(key, Types.List);
+        if (metadata.Size == 0)
+        {
+            return null;
+        }
+        long index = 0;
+            
+        if (isLeft)
+        {
+            index = metadata.Head;
+            metadata.Head += 1;
+        }
+        else
+        {
+            index = metadata.Tail;
+            metadata.Tail -= 1;
+        }
+        metadata.Size -= 1;
+        var internalKey = new ListInternalKey(key,metadata.Version,index);
+        try
+        {
+            var getResult = _engine.Get(internalKey.Encode());
+
+            var writeBatch = _engine.CreateWriteBatch(WriteBatchOptions.Default);
+            writeBatch.Put(Encoding.UTF8.GetBytes(key),metadata.Encode());
+            writeBatch.Delete(internalKey.Encode());
+            writeBatch.Commit();
+            return Encoding.UTF8.GetString(getResult);
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+    }
+    public bool LPush(string key, string value)
+    {
+        return InnerPush(key, value);
+    }
+
+    public bool RPush(string key, string value)
+    {
+        return InnerPush(key, value,false);
+    }
+    private bool InnerPush(string key, string value,bool isLeft = true)
+    {
+        var metadata = FindMetadata(key, Types.List);
+        long index = 0;
+        if (isLeft)
+        {
+            metadata.Head -= 1;
+            index = metadata.Head;
+        }
+        else
+        {
+            metadata.Tail += 1;
+            index = metadata.Tail;
+        }
+        metadata.Size += 1;
+        var internalKey = new ListInternalKey(key, metadata.Version, index);
+        try
+        {
+            var writeBatch = _engine.CreateWriteBatch(WriteBatchOptions.Default);
+            writeBatch.Put(Encoding.UTF8.GetBytes(key),metadata.Encode());
+            writeBatch.Put(internalKey.Encode(),Encoding.UTF8.GetBytes(value));
+            writeBatch.Commit();
+        }
+        catch (Exception e)
+        {
+            return false;
+        }
+
+        return true;
+    }
+    
     /// <summary>
     /// SREN
     /// </summary>

@@ -180,7 +180,6 @@ public class RedisStructTest
         Directory.Delete(dirPath,true);
     }
 
-
     [Test]
     public void TestSAdd()
     {
@@ -266,6 +265,121 @@ public class RedisStructTest
         
         var isMemberRes3 = redis.SIsMember("MySet","c");
         Assert.IsFalse(isMemberRes3);
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+
+
+    [Test]
+    public void TestLPush()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir_LPush");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+
+        var pushResult1 = redis.LPush("LPush", "1");
+        Assert.IsTrue(pushResult1);
+        
+        var pushResult2 = redis.LPush("LPush", "2");
+        Assert.IsTrue(pushResult2);
+        
+        var pushResult3 = redis.LPush("LPush", "3");
+        Assert.IsTrue(pushResult3);
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+    
+    
+    [Test]
+    public void TestRPush()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir_RPush");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+
+        var pushResult1 = redis.RPush("RPush", "1");
+        Assert.IsTrue(pushResult1);
+        
+        var pushResult2 = redis.RPush("RPush", "2");
+        Assert.IsTrue(pushResult2);
+        
+        var pushResult3 = redis.RPush("RPush", "3");
+        Assert.IsTrue(pushResult3);
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+    
+    
+    [Test]
+    public void TestLPop()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir_LPop");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+
+        var pushResult1 = redis.LPush("LPush", "1");
+        Assert.IsTrue(pushResult1);
+        
+        var pushResult2 = redis.LPush("LPush", "2");
+        Assert.IsTrue(pushResult2);
+        
+        var pushResult3 = redis.LPush("LPush", "3");
+        Assert.IsTrue(pushResult3);
+
+        var popResult1 = redis.LPop("LPush");
+        Assert.IsNotNull(popResult1);
+        Assert.AreEqual("3", popResult1);
+        
+        var popResult2 = redis.LPop("LPush");
+        Assert.IsNotNull(popResult2);
+        
+        var popResult3 = redis.LPop("LPush");
+        Assert.IsNotNull(popResult3);
+        
+        // 
+        var popResult4 = redis.LPop("LPush");
+        Assert.IsNull(popResult4);
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+    
+    [Test]
+    public void TestRPop()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir_RPop");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+
+        var pushResult1 = redis.RPush("RPush", "1");
+        Assert.IsTrue(pushResult1);
+        
+        var pushResult2 = redis.RPush("RPush", "2");
+        Assert.IsTrue(pushResult2);
+        
+        var pushResult3 = redis.RPush("RPush", "3");
+        Assert.IsTrue(pushResult3);
+
+        var popResult1 = redis.RPop("RPush");
+        Assert.IsNotNull(popResult1);
+        Assert.AreEqual("3", popResult1);
+        
+        var popResult2 = redis.RPop("RPush");
+        Assert.IsNotNull(popResult2);
+        
+        var popResult3 = redis.RPop("RPush");
+        Assert.IsNotNull(popResult3);
+        
+        // 
+        var popResult4 = redis.RPop("RPush");
+        Assert.IsNull(popResult4);
         
         redis.Dispose();
         Directory.Delete(dirPath,true);
