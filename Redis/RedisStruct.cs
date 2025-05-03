@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Security;
+using System.Text;
 using Core.DB;
 using Core.Exceptions;
 
@@ -50,6 +51,87 @@ public class RedisStruct: IDisposable
         }
     }
 
+    /// <summary>
+    /// SREN
+    /// </summary>
+    /// <param name="key"></param>
+    /// <param name="value"></param>
+    /// <returns></returns>
+    public bool SRemove(string key,string value)
+    {
+        Metadata metadata = FindMetadata(key,Types.Set);
+
+        if (metadata.Size == 0)
+        {
+            return false;
+        }
+
+        var internalKey = new SetInternalKey(key, metadata.Version, value);
+        var writeBatch = _engine.CreateWriteBatch(WriteBatchOptions.Default);
+        try
+        {
+            _engine.Get(internalKey.Encode());
+            metadata.Size -= 1;
+            writeBatch.Put(Encoding.UTF8.GetBytes(key),metadata.Encode());
+            writeBatch.Delete(internalKey.Encode());
+            writeBatch.Commit();
+        }
+        catch (KeyNotFoundException e)
+        {
+            return false;
+        }
+        
+        return true;
+    }
+    public bool SIsMember(string key,string value)
+    {
+        Metadata metadata = FindMetadata(key, Types.Set);
+
+        if (metadata.Size == 0)
+        {
+            return false;
+        }
+        var internalKey = new SetInternalKey(key,metadata.Version,value);
+
+        try
+        {
+            _engine.Get(internalKey.Encode());
+        }
+        catch (KeyNotFoundException _)
+        {
+            return false;
+        }
+
+        return true;
+    }
+    public bool SAdd(string key, string value)
+    {
+        Metadata metadata = FindMetadata(key, Types.Set);
+        
+        // try to find data part 
+        var internalKey = new SetInternalKey(key,metadata.Version,value);
+
+        try
+        {
+            _engine.Get(internalKey.Encode());
+        }
+        catch (KeyNotFoundException e)
+        {
+            var writeBatch = _engine.CreateWriteBatch(WriteBatchOptions.Default);
+
+            metadata.Size += 1;
+
+            writeBatch.Put(Encoding.UTF8.GetBytes(key), metadata.Encode());
+            writeBatch.Put(internalKey.Encode(), new byte[] { });
+            writeBatch.Commit();
+        }
+        catch (Exception e)
+        {
+            return false;
+        }
+        return true;
+    }
+    
     public string? Get(string key)
     {
         try
@@ -174,6 +256,16 @@ public class RedisStruct: IDisposable
         wb.Commit();
         return true;
     }
+    
+    
+    
+    /// <summary>
+    /// try to find metadata,if not exists constructor new instance 
+    /// </summary>
+    /// <param name="key"></param>
+    /// <param name="type"></param>
+    /// <returns></returns>
+    /// <exception cref="Exception"></exception>
     private Metadata FindMetadata(string key,Types type)
     {
         bool exists = true;
@@ -204,7 +296,7 @@ public class RedisStruct: IDisposable
         {
             metadata =  new Metadata()
             {
-                Type = Types.Hash,
+                Type = type,
                 Expire = 0,
                 Version = DateTime.Now.Ticks,
                 Head = 0,

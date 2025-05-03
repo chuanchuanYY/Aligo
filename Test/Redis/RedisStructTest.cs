@@ -179,6 +179,95 @@ public class RedisStructTest
         redis.Dispose();
         Directory.Delete(dirPath,true);
     }
-    
-    
+
+
+    [Test]
+    public void TestSAdd()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+        
+        var addResutl1 = redis.SAdd("MySet","a");
+        Assert.IsTrue(addResutl1);
+        
+        // add same member
+        var addResutl2 = redis.SAdd("MySet","a");
+        Assert.IsTrue(addResutl2);
+        
+        var addResutl3 = redis.SAdd("MySet","b");
+        Assert.IsTrue(addResutl3);
+        
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+
+
+    [Test]
+    public void TestSRemove()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+        
+        var addResutl1 = redis.SAdd("MySet","a");
+        Assert.IsTrue(addResutl1);
+        
+        // add same member
+        var addResutl2 = redis.SAdd("MySet","a");
+        Assert.IsTrue(addResutl2);
+        
+        var addResutl3 = redis.SAdd("MySet","b");
+        Assert.IsTrue(addResutl3);
+
+
+        var remResult1 = redis.SRemove("MySet", "a");
+        Assert.IsTrue(remResult1);
+        
+        var remResult2 = redis.SRemove("MySet", "b");
+        Assert.IsTrue(remResult2);
+        
+        // 
+        var remResult3 = redis.SRemove("MySet", "a");
+        Assert.IsFalse(remResult3);
+        
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+
+    [Test]
+    public void TestSIsMember()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+        
+        var addResutl1 = redis.SAdd("MySet","a");
+        Assert.IsTrue(addResutl1);
+        
+        // add same member
+        var addResutl2 = redis.SAdd("MySet","a");
+        Assert.IsTrue(addResutl2);
+        
+        var addResutl3 = redis.SAdd("MySet","b");
+        Assert.IsTrue(addResutl3);
+        
+        
+        var isMemberRes1 = redis.SIsMember("MySet","a");
+        Assert.IsTrue(isMemberRes1);
+        
+        var isMemberRes2 = redis.SIsMember("MySet","b");
+        Assert.IsTrue(isMemberRes2);
+        
+        var isMemberRes3 = redis.SIsMember("MySet","c");
+        Assert.IsFalse(isMemberRes3);
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
 }

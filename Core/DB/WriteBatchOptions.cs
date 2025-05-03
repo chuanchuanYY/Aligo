@@ -8,7 +8,6 @@ public class WriteBatchOptions
     
     // 提交后是否立即同步数据持久化
     public bool SyncWhenCommited { get; set; } = false;
-
-
-
+    
+    public static WriteBatchOptions Default { get; } = new WriteBatchOptions();
 }
