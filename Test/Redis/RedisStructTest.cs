@@ -139,7 +139,6 @@ public class RedisStructTest
         var setResult3 = redis.HashSet("MySet", "a", "1");
         Assert.IsTrue(setResult3);
         
-        
         // get
         var getResult1 = redis.HashGet("MySet","a");
         Assert.AreEqual("1", getResult1);
@@ -381,6 +380,57 @@ public class RedisStructTest
         var popResult4 = redis.RPop("RPush");
         Assert.IsNull(popResult4);
         
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+    
+    
+    
+    [Test]
+    public void TestZAdd()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir_ZAdd");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+
+        var addResult1 = redis.ZAdd("MyZSet", 100, "a");
+        Assert.IsTrue(addResult1);
+      
+        var addResult2 = redis.ZAdd("MyZSet", 110, "a");
+        Assert.IsTrue(addResult2);
+        
+        var addResult3 = redis.ZAdd("MyZSet", 200, "b");
+        Assert.IsTrue(addResult3);
+        
+        
+        redis.Dispose();
+        Directory.Delete(dirPath,true);
+    }
+    
+    [Test]
+    public void TestZScore()
+    {
+        var dirPath = Environment.CurrentDirectory;
+        dirPath = Path.Join(dirPath, "TestDir_ZScore");
+        var engineOps = new EngineOptions(dirPath);
+        var redis = new RedisStruct(engineOps);
+
+        var addResult1 = redis.ZAdd("MyZSet", 100, "a");
+        Assert.IsTrue(addResult1);
+      
+        var addResult2 = redis.ZAdd("MyZSet", 110, "a");
+        Assert.IsTrue(addResult2);
+        
+        var addResult3 = redis.ZAdd("MyZSet", 200, "b");
+        Assert.IsTrue(addResult3);
+        
+        var score1 = redis.ZScore("MyZSet","a");
+        Assert.AreEqual(110,score1);
+        
+        var score2 = redis.ZScore("MyZSet","b");
+        Assert.AreEqual(200,score2);
+
         redis.Dispose();
         Directory.Delete(dirPath,true);
     }

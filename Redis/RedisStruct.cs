@@ -50,7 +50,7 @@ public class RedisStruct: IDisposable
             return null;
         }
     }
-
+    
     public string? LPop(string key)
     {
         return InnerPop(key);
@@ -427,6 +427,64 @@ public class RedisStruct: IDisposable
     }
     #endregion
 
+
+    public bool ZAdd(string key, double score, string member)
+    {
+        var metadata = FindMetadata(key, Types.ZSet);
+
+        var internalKey = new ZSetInternalKey(key, metadata.Version, member);
+        var writeBatch = _engine.CreateWriteBatch(WriteBatchOptions.Default);
+        bool isExist = true;
+        try
+        {
+            var oldScore = _engine.Get(internalKey.Encode());
+        }
+        catch (KeyNotFoundException e)
+        {
+            isExist = false;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        if (!isExist)
+        {
+            metadata.Size += 1;
+            writeBatch.Put(Encoding.UTF8.GetBytes(key),metadata.Encode());
+        }
+        writeBatch.Put(internalKey.Encode(),BitConverter.GetBytes(score));
+        writeBatch.Commit();
+
+        return true;
+    }
+    
+    /// <summary>
+    ///  if member not exists,throw Exception 
+    /// </summary>
+    /// <param name="key"></param>
+    /// <param name="member"></param>
+    /// <returns></returns>
+    public double ZScore(string key, string member)
+    {
+        var metadata = FindMetadata(key, Types.ZSet);
+
+        if (metadata.Size == 0)
+        {
+            throw new Exception("member not exist");
+        }
+        var internalKey = new ZSetInternalKey(key, metadata.Version, member);
+        try
+        {
+            var score = _engine.Get(internalKey.Encode());
+            return BitConverter.ToDouble(score);
+        }
+        catch (Exception e)
+        {
+            throw new Exception("Internal Exception",e);
+        }
+        
+    }
     public void Dispose()
     {
         _engine.Dispose();
