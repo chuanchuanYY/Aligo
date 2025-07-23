@@ -16,7 +16,7 @@ public class EngineTest
         dirPath = Path.Join(dirPath, "TestDir");
         var engineOps = new EngineOptions(dirPath);
         var engine = new Engine(engineOps);
-
+        
         var putKey1Res = engine.Put(KeyValueHelper.GetKey(1),KeyValueHelper.GetValue(1));
         Assert.NotNull(putKey1Res);
         engine.Dispose();

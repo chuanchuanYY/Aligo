@@ -384,8 +384,6 @@ public class RedisStructTest
         Directory.Delete(dirPath,true);
     }
     
-    
-    
     [Test]
     public void TestZAdd()
     {

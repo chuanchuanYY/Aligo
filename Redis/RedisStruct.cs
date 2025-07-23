@@ -1,4 +1,5 @@
-﻿using System.Security;
+﻿using System.Collections.Concurrent;
+using System.Security;
 using System.Text;
 using Core.DB;
 using Core.Exceptions;
@@ -447,7 +448,7 @@ public class RedisStruct: IDisposable
         {
             return false;
         }
-
+        
         if (!isExist)
         {
             metadata.Size += 1;
@@ -458,7 +459,7 @@ public class RedisStruct: IDisposable
 
         return true;
     }
-    
+
     /// <summary>
     ///  if member not exists,throw Exception 
     /// </summary>
